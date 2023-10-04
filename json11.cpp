@@ -25,8 +25,6 @@
 #include <cstdlib>
 #include <cstdio>
 #include <limits>
-#include <sstream>
-#include <locale>
 
 namespace json11 {
 
@@ -58,10 +56,9 @@ static void dump(NullStruct, string &out) {
 
 static void dump(double value, string &out) {
     if (std::isfinite(value)) {
-        std::ostringstream stm;
-        stm.imbue(std::locale("C"));
-        stm << value;
-        out += stm.str();
+        char buf[32];
+        snprintf(buf, sizeof buf, "%.17g", value);
+        out += buf;
     } else {
         out += "null";
     }
@@ -234,7 +231,7 @@ struct Statics {
     const std::shared_ptr<JsonValue> f = make_shared<JsonBoolean>(false);
     const string empty_string;
     const vector<Json> empty_vector;
-    const map<string, Json> empty_map;
+    const JsonObject2 empty_map;
     Statics() {}
 };
 
@@ -276,7 +273,7 @@ int Json::int_value()                             const { return m_ptr->int_valu
 bool Json::bool_value()                           const { return m_ptr->bool_value();   }
 const string & Json::string_value()               const { return m_ptr->string_value(); }
 const vector<Json> & Json::array_items()          const { return m_ptr->array_items();  }
-const map<string, Json> & Json::object_items()    const { return m_ptr->object_items(); }
+const JsonObject2 & Json::object_items()    const { return m_ptr->object_items(); }
 const Json & Json::operator[] (size_t i)          const { return (*m_ptr)[i];           }
 const Json & Json::operator[] (const string &key) const { return (*m_ptr)[key];         }
 
@@ -285,7 +282,7 @@ int                       JsonValue::int_value()                 const { return 
 bool                      JsonValue::bool_value()                const { return false; }
 const string &            JsonValue::string_value()              const { return statics().empty_string; }
 const vector<Json> &      JsonValue::array_items()               const { return statics().empty_vector; }
-const map<string, Json> & JsonValue::object_items()              const { return statics().empty_map; }
+const JsonObject2 &       JsonValue::object_items()              const { return statics().empty_map; }
 const Json &              JsonValue::operator[] (size_t)         const { return static_null(); }
 const Json &              JsonValue::operator[] (const string &) const { return static_null(); }
 
@@ -444,9 +441,9 @@ struct JsonParser final {
      */
     char get_next_token() {
         consume_garbage();
-        if (failed) return (char)0;
+        if (failed) return static_cast<char>(0);
         if (i == str.size())
-            return fail("unexpected end of input", (char)0);
+            return fail("unexpected end of input", static_cast<char>(0));
 
         return str[i++];
     }
@@ -621,11 +618,7 @@ struct JsonParser final {
                 i++;
         }
 
-		std::istringstream stm(std::string(str.begin()+start_pos, str.end()));
-		stm.imbue(std::locale("C"));
-        double result;
-        stm >> result;
-        return result;
+        return std::strtod(str.c_str() + start_pos, nullptr);
     }
 
     /* expect(str, res)
@@ -675,7 +668,7 @@ struct JsonParser final {
             return parse_string();
 
         if (ch == '{') {
-            map<string, Json> data;
+            JsonObject2 data;
             ch = get_next_token();
             if (ch == '}')
                 return data;
@@ -692,6 +685,7 @@ struct JsonParser final {
                 if (ch != ':')
                     return fail("expected ':' in object, got " + esc(ch));
 
+                data.push_back(key);
                 data[std::move(key)] = parse_json(depth + 1);
                 if (failed)
                     return Json();
@@ -782,8 +776,10 @@ bool Json::has_shape(const shape & types, string & err) const {
         return false;
     }
 
+    const auto& obj_items = object_items();
     for (auto & item : types) {
-        if ((*this)[item.first].type() != item.second) {
+        const auto it = obj_items.find(item.first);
+        if (it == obj_items.cend() || it->second.type() != item.second) {
             err = "bad type for " + item.first + " in " + dump();
             return false;
         }

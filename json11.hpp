@@ -75,6 +75,26 @@ enum JsonParse {
 };
 
 class JsonValue;
+class Json;
+
+class JsonObject2 : public std::map<std::string, Json>
+{
+public:
+    using map::map;
+
+    void push_back(std::string key)
+    {
+        m_keys.push_back(key);
+    }
+
+    std::vector<std::string> keys() const
+    {
+        return m_keys;
+    }
+
+private:
+    std::vector<std::string> m_keys;
+};
 
 class Json final {
 public:
@@ -85,7 +105,7 @@ public:
 
     // Array and object typedefs
     typedef std::vector<Json> array;
-    typedef std::map<std::string, Json> object;
+    typedef JsonObject2 object;
 
     // Constructors for the various types of JSON value.
     Json() noexcept;                // NUL
